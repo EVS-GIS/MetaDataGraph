@@ -1,0 +1,489 @@
+---
+title: "OSR_metadata"
+execute:
+  echo: false
+  warning: false
+  message: false
+---
+
+```{r setup, warning=FALSE, message=FALSE}
+library(xml2)
+library(dplyr)
+library(igraph)
+library(ggraph)
+library(lubridate)
+library(ggwordcloud)
+metadata_dir="MetadonneesOSR4-5-6"
+fiches=list.files(metadata_dir)
+source("R/get_metadata.R")
+set.seed(123)
+OSR_turquoise="#04a4bc"
+OSR_orange="#e94c0c"
+```
+
+# DATA
+
+## Récupération des données depuis les fichiers .xml
+
+On "parse" les fichiers xml pour récupérer les quelques infos qui nous intéressent ici, à savoir les personnes impliquées dans la fiche, leur labo, et les mots-clés.
+
+## Tableau des métadonnées
+
+```{r get_data}
+all_metadata=get_metadata(metadata_dir)
+dat_categories=get_categories(metadata_dir)
+write.table(all_metadata,"data/all_metadata.csv",sep=";", row.names=FALSE)
+DT::datatable(all_metadata)
+```
+
+## Catégories
+
+Graphique du nombre de fiches par catégories (DonnéesTabulaires/ physicalSamples / DonnéesVectorielles, etc.)
+
+```{r categories}
+ggplot(dat_categories %>% 
+         group_by(categories) %>% 
+         tally(),
+       aes(x=forcats::fct_reorder(categories,n),y=n))+
+  geom_col(fill=OSR_orange)+
+  coord_flip()+xlab("")
+
+```
+
+# STATS
+
+## Nombre de keywords par fiche
+
+Nombre de keywords par fiche
+
+```{r keywords}
+dat_keywords=all_metadata %>% 
+  select(ID_fiche,keywords) %>% 
+  unique() %>% 
+  group_by(ID_fiche) %>% 
+  summarise(nkeywords=n())
+X=dat_keywords %>%
+  summarise(X=mean(nkeywords,na.rm=T)) %>% 
+  pull(X)
+dat_keywords %>% 
+  group_by(nkeywords) %>% 
+  summarise(nfiches=n())%>%
+  DT::datatable()
+```
+
+En moyenne il y a `r X` mots-clés par fiche.
+
+## Nombre d'auteurs par fiche
+
+```{r authors}
+dat_pers=all_metadata %>% 
+  select(ID_fiche,R_personnes) %>% 
+  unique() %>% 
+  group_by(ID_fiche) %>% 
+  summarise(npers=n()) 
+X=dat_pers %>% 
+  summarise(X=mean(npers,na.rm=T)) %>% 
+  pull(X)
+dat_pers%>% 
+  group_by(npers) %>% 
+  summarise(nfiches=n()) %>%
+     DT::datatable(rownames=FALSE)
+```
+
+En moyenne il y a `r X` auteurs par fiche.
+
+## Nombre d'organismes-auteurs par fiche
+
+```{r authororganisms}
+dat_org=all_metadata %>% 
+  select(ID_fiche,R_orgs) %>% 
+  unique() %>% 
+  group_by(ID_fiche) %>% 
+  summarise(norg=n()) 
+X=dat_org %>% 
+  summarise(X=mean(norg,na.rm=T)) %>% 
+  pull(X)
+dat_org %>% 
+  group_by(norg) %>% 
+  summarise(nfiches=n()) %>%
+     DT::datatable(rownames=FALSE)
+```
+
+En moyenne il y a `r X` organismes auteurs par fiche.
+
+## Nombre de liens par fiche
+
+```{r links}
+dat_links=all_metadata %>% 
+  select(ID_fiche,nlinks) %>% 
+  unique() 
+X=dat_links %>%
+  summarise(X=mean(nlinks,na.rm=T)) %>% 
+  pull(X)
+dat_links %>% 
+  group_by(nlinks) %>%
+  summarise(nfiches=n())%>%
+     DT::datatable(rownames=FALSE)
+```
+
+En moyenne il y a `r X` liens par fiche.
+
+## Nombre d'OSR par fiche
+
+```{r OSR}
+dat_OSR=all_metadata %>% 
+  select(ID_fiche,nOSR) %>% 
+  unique() 
+X=dat_OSR %>%
+  summarise(X=mean(nOSR,na.rm=T)) %>% 
+  pull(X)
+dat_OSR %>% 
+  group_by(nOSR) %>%
+  summarise(nfiches=n())%>%
+     DT::datatable(rownames=FALSE)
+```
+
+En moyenne il y a `r X` programmes OSR mentionnés par fiche.
+
+# WORDCLOUDS
+
+## Mise en forme des métadonnées: keywords_data
+
+```{r keywords_data, warning=FALSE, message=FALSE,}
+keywords_data=unique(select(all_metadata,ID_fiche,keywords,types,))
+
+keywords_data <- keywords_data %>%
+  group_by(keywords,types) %>%
+  summarise(freq=n()) %>%
+  ungroup() %>%
+  arrange(desc(freq),keywords)
+
+write.table(keywords_data,"data/keywords_data.csv",sep=";", row.names=FALSE)
+
+DT::datatable(keywords_data)
+```
+
+## Tracé des nuages de mots
+
+On réalise le nuage de mots.
+
+### wordcloud des keywords FREE
+
+```{r wordcloud_FREE, fig.width=10,fig.height=8}
+tibFREE=all_metadata %>% 
+  select(ID_fiche,keywords,types) %>% 
+  unique() %>% 
+  filter(types=="FREE") %>% 
+  group_by(keywords) %>% 
+  tally() %>% 
+  filter(!(keywords %in% c("OSR","Rhône")))
+ggplot(tibFREE, aes(label = keywords,size=n, color=log10(n))) +
+  geom_text_wordcloud() +
+  theme_minimal()+
+  scale_color_gradient(low = OSR_orange, high = OSR_turquoise)+
+  scale_size_area(max_size = 20) 
+
+```
+
+### wordcloud des keywords ISO
+
+```{r wordcloud_ISO}
+tibISO=all_metadata %>% 
+  select(ID_fiche,keywords,types) %>% 
+  unique() %>% 
+  filter(types=="ISO") %>% 
+  group_by(keywords) %>% 
+  tally()
+
+ggplot(tibISO, aes(label = keywords,size=n, color=log10(n))) +
+  geom_text_wordcloud() +
+  theme_minimal()+
+  scale_color_gradient(low = OSR_orange, high = OSR_turquoise)+
+  scale_size_area(max_size = 15) 
+
+```
+
+### wordcloud des keywords INSPIRE
+
+```{r wordcloud_INSPIRE}
+tibINSPIRE=all_metadata %>% 
+  select(ID_fiche,keywords,types) %>% 
+  unique() %>% 
+  filter(types=="INSPIRE") %>% 
+  group_by(keywords) %>% 
+  tally()
+ggplot(tibINSPIRE, aes(label = keywords,size=n, color=log10(n))) +
+  geom_text_wordcloud() +
+  theme_minimal()+
+  scale_color_gradient(low = OSR_orange, high = OSR_turquoise)+
+  scale_size_area(max_size = 10) 
+
+```
+
+# GRAPHS
+
+## Mise en forme données
+
+La fonction suivante permet de créer un graphe des entités définies par linkvar (il peut s'agir des laboratoires, ou des personnes).
+
+```{r, warning=FALSE, message=FALSE,fig.width=12,fig.height=12, echo=FALSE}
+get_graph_data=function(linkvar){
+  linkvar=enquo(linkvar)
+  g_metadata=all_metadata %>% 
+    select(ID_fiche,
+           linkingvar=!!linkvar) %>% 
+    mutate(linkingvar=as.vector(linkingvar)) %>% 
+    unique()
+  collaborations=g_metadata %>% 
+    group_by(ID_fiche) %>% 
+    tally()
+  dat=c()
+  for(i in 1:nrow(collaborations)){
+    # Pour chaque fiche, crée toutes les combinaisons deux à deux V1-V2 des collaborateurs
+    # (tableau "unidirectionnel": tel que V1 < V2 dans l'ordre alphabétique)
+    dat_tmp=g_metadata %>% 
+      filter(ID_fiche==collaborations$ID_fiche[i]) %>% 
+      tidyr::expand(V1=linkingvar,V2=linkingvar) %>%   
+      mutate(V2=case_when(V2==V1~NA,
+             TRUE~V2)) %>% 
+      mutate(check = purrr::map2_lgl(V1,V2,function(x,y){return(as.logical(x<y))}))
+    dat=rbind(dat,dat_tmp)
+  }
+  dat=dat %>% 
+    group_by(V1,V2)%>%
+    summarise(nfiches=n(),.groups="drop") %>% 
+    arrange(desc(nfiches))
+  return(dat)
+}
+
+```
+
+## Graph des collaborations entre labos
+
+### Tableaux
+
+```{r dat_labos}
+dat_labos=get_graph_data(R_orgs)
+# nombre de fiches par labo
+dat_labos %>% filter(is.na(V2)) %>% select(-V2) %>%    DT::datatable(rownames=FALSE)
+# nombre de fiches communes à deux labos
+dat_labos %>% filter(!is.na(V2)) %>%    DT::datatable(rownames=FALSE)
+
+```
+
+### Graph
+
+```{r graph_labos, echo=FALSE}
+nodes=dat_labos %>% 
+  filter(is.na(V2),!is.na(V1)) 
+edges=dat_labos %>%
+  filter(!is.na(V2))
+g=tidygraph::tbl_graph(nodes=nodes,edges=edges,directed=FALSE)
+layout= create_layout(g, layout="igraph",algorithm="nicely")
+ggraph(layout) + 
+       geom_edge_link(aes(edge_width=nfiches),color=OSR_orange, alpha=0.25) +
+       geom_node_point(aes(size=nfiches), color=OSR_turquoise) +
+       geom_node_label(aes(label=V1), repel=T) +
+       scale_edge_width(range=c(2,6)) +
+       scale_x_continuous(limits=extendrange(layout$x, f=0.1)) +
+       scale_y_continuous(limits=extendrange(layout$y, f=0.1)) +
+       theme(axis.title.y=element_blank(),
+             axis.text.y=element_blank(),
+             axis.ticks.y=element_blank(),
+             axis.title.x=element_blank(),
+             axis.text.x=element_blank(),
+             axis.ticks.x=element_blank(),
+             panel.background=element_blank())
+```
+
+## Graph collaborations_personnes
+
+### Tableaux
+
+```{r dat_personnes}
+dat_personnes=get_graph_data(R_personnes)
+# nombre de fiches par personne
+dat_personnes %>% filter(is.na(V2)) %>% select(-V2) %>%    DT::datatable(rownames=FALSE)
+# nombre de fiches communes à deux personnes
+dat_personnes %>% filter(!is.na(V2)) %>%    DT::datatable(rownames=FALSE)
+```
+
+### Graph
+
+```{r graph_personnes, fig.width=10, fig.height=10}
+dat_personnes=get_graph_data(R_personnes)
+nodes=dat_personnes %>% 
+  filter(is.na(V2) & !is.na(V1)) 
+edges=dat_personnes %>%
+  filter(!is.na(V2))
+g=tidygraph::tbl_graph(nodes=nodes,edges=edges,directed=FALSE)
+layout= create_layout(g, layout="igraph",algorithm="nicely")
+ggraph(layout) + 
+       geom_edge_link(aes(edge_width=nfiches),color=OSR_orange, alpha=0.25) +
+       geom_node_point(aes(size=nfiches), color=OSR_turquoise) +
+       geom_node_label(aes(label=V1), repel=T) +
+       scale_edge_width(range=c(2,6)) +
+       scale_x_continuous(limits=extendrange(layout$x, f=0.1)) +
+       scale_y_continuous(limits=extendrange(layout$y, f=0.1)) +
+       theme(axis.title.y=element_blank(),
+             axis.text.y=element_blank(),
+             axis.ticks.y=element_blank(),
+             axis.title.x=element_blank(),
+             axis.text.x=element_blank(),
+             axis.ticks.x=element_blank(),
+             panel.background=element_blank())
+```
+
+# TIME
+
+## Mise en forme données
+
+On met en forme les données pour avoir (par fiche), toutes les années listées entre le début et la fin de la période mentionnée.
+
+```{r data_time, echo=FALSE}
+data_temps=select(all_metadata,ID_fiche,debut,fin) %>%
+  distinct() %>%
+  mutate(ydebut=year(debut),
+         yfin=year(fin)+1) %>%
+  arrange(ydebut,ID_fiche) %>%
+  select(ID_fiche,ydebut,yfin) %>%
+  mutate(rang=rank(ydebut))
+
+  datat=tibble(year=min(data_temps$ydebut,na.rm=T):max(data_temps$yfin,na.rm=T))%>% 
+    mutate(n=purrr::map_int(year,~length(which(.x>=data_temps$ydebut & .x<=data_temps$yfin))))
+```
+
+```{r show_data_time}
+DT::datatable(datat)
+```
+
+## Tracé des timelines
+
+\`plot_timeline()\` trace pour chaque fiche la période couverte
+
+\`plot_timehist()\` trace année par année le nombre de fiches qui couvrent l'année.
+
+\`plot_durationhist()\` trace le nombre de fiches portant sur une certaine longueur de période (1 an ou moins, 2 à 5 ans, 5 à 10 ans, 10 à 20 ans, etc.)
+
+```{r plot_timeline, echo=FALSE}
+plot_timeline=function(data){
+  data <- mutate(data,rang2=order(rang))
+  p=ggplot(data,aes(x=rang2))+
+    geom_linerange(aes(ymin=ydebut,ymax=yfin), lwd=2, color=OSR_orange) +
+    coord_flip()+
+    theme(axis.title.y=element_blank(),
+          axis.text.y=element_blank(),
+          axis.ticks.y=element_blank())
+  return(p)
+}
+```
+
+```{r plot_timehist, echo=FALSE}
+plot_timehist=function(datat){
+
+  p=ggplot(datat,aes(x=year,y=n))+
+    geom_col(fill=OSR_orange)+
+    xlab("année")+
+    ylab("nombre de fiches par année")
+  return(p)
+}
+```
+
+```{r timeline, echo=FALSE,fig.width=8,fig.height=6, warning=FALSE, message=FALSE}
+plot_timeline(data_temps)
+```
+
+```{r timehist, echo=FALSE,fig.width=12,fig.height=4, warning=FALSE, message=FALSE}
+plot_timehist(datat)
+```
+
+```{r plot_durationhist, echo=FALSE}
+plot_durationhist=function(data){
+  datat=data %>% mutate(duration=yfin-ydebut) 
+  p=ggplot(datat,aes(x=duration))+
+    geom_histogram(breaks=c(0,1,5,10,20,50,100,200), fill=OSR_orange)+
+    xlab("longueur de période")
+  return(p)
+}
+```
+
+```{r durationhist,fig.width=6,fig.height=4}
+plot_durationhist(data_temps)
+```
+
+# MAP
+
+## Mise en forme des données
+
+```{r prepare_map}
+library(leaflet)
+library(sf)
+
+# Convertir le dataframe en objets sf
+bounding_boxes=all_metadata %>% 
+                      select(ID_fiche,xmin,ymin,xmax,ymax) %>% 
+  unique() %>% 
+  na.omit()
+
+fbox <- function(nelat, nelng, swlat, swlng){
+  m <- matrix(c(swlng, nelng, nelng, swlng, swlng,
+                swlat, swlat, nelat, nelat, swlat), nrow = 5)
+  return(st_polygon(list(m)))
+}
+
+bb=bounding_boxes %>%
+  mutate(geometry = purrr::pmap(list(nelat=ymax,
+                                     nelng=xmax,
+                                     swlat=ymin,
+                                     swlng=xmin),
+                                fbox)) %>% 
+  st_as_sf(sf_column_name = "geometry")
+
+# Calculer la densité de recouvrement des bounding box
+grid=st_make_grid(bb, cellsize = c(0.05, 0.05)) %>% 
+  as_tibble() %>% 
+  mutate(intersection=st_intersects(geometry,bb))  %>% 
+  mutate(density=purrr::map_int(intersection,~length(.x))) %>% 
+  mutate(densitycat=case_when(density==0~0,
+                              density==1 ~1,
+                              density==2 ~2,
+                              density>2 & density <=5 ~3,
+                              density>5~4))%>% 
+  mutate(densitycat=paste0("n",densitycat)) %>% 
+  select(-intersection) %>% 
+  st_as_sf(sf_column_name = "geometry")
+
+
+```
+
+## Tracé de la carte
+
+On trace la carte de densité des "emprises de fiche" qui permet de voir quelles sont les zones sur lesquelles on dispose le plus de données: de blanc (densité la plus faible) à rouge (densité la plus forte).
+
+```{r map, echo=FALSE}
+# Créer une carte Leaflet
+map <- leaflet(grid) %>%
+  addTiles() %>% 
+  #make the color depend on densitycat
+  addPolygons(
+    fillColor = ~colorNumeric(
+      palette = c("white","yellow", "red"),
+      domain = grid$density
+    )(grid$density),
+    fillOpacity = 0.6, # Opacité de remplissage
+    stroke = FALSE, # Pas de contour
+    popup = ~paste("Nombre de fiches:", grid$density)) %>% 
+  # Ajout de la légende
+  addLegend(
+    position = "bottomright",
+    pal = colorNumeric(
+      palette = c("white","yellow", "red"),
+      domain = grid$density
+    ),
+    values = ~grid$density,
+    title = "Nombre de fiches"
+  )
+
+# Afficher la carte
+map
+```
